@@ -1,0 +1,827 @@
+---
+title: "Projekt"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(psych)
+library(tseries)
+library(forecast)
+library(lmtest)
+library(aTSA)
+library(vars)
+library(rugarch)
+```
+
+# Wstęp   
+Choć Polska nie jest kolebką gamedevu, jak również swoich oddziałów nie posiadają w naszym kraju giganci branży, to jednak wiele milionów graczy z całego świata ma okazję spędzać czas w produkcjach autorstwa polskich przedsiębiorstw. Najbardziej znanym jest oczywiście CD Projekt, którego uznać można za lidera polskiego gamedevu. Jej początki sięgają dystrybucji i wydawania polskich edycji zagranicznych produkcji. Obecnie w skład grupy kapitałowej CD Projekt, oprócz podmiotów zajmujących się wymienionymi czynnościami wchodzi również GOG (sklep internetowy zajmujący się cyfrową dystrybucją gier) oraz CD Projekt RED - studio tworzące gry. Właśnie za sprawą tego ostatniego przedsiębiorstwo zdobyło międzynarodową rozpoznawalność. Wiedźmińska trylogia (a w szczególności trzecia część) została ciepło przyjęta przez recenzentów i graczy na całym świecie i sprawiła że studio to było uważane za jednego z bardziej godnych zaufania i docenianych twórców gier na świecie. Pod koniec ubiegłego roku miała jednak premierę kolejna gra Redów - Cyberpunk 2077 - który był produktem niedopracowanym i pozostawiającym wiele do życzenia. Z tego powodu analiza notowań tej spółki będzie niezmiernie ciekawa - zauważyć będzie można wpływ nieudanej premiery na ceny akcji na warszawskiej giełdzie. 
+Drugą ze spółek która została wybrana do projektu jest 11 bit studios. Jest to przedsiębiorstwo mniejsze, lecz również mające na swoim koncie spory sukces - grę This War of Mine ukazującą okrócieństwa wojny z perspektywy grupy cywili. Została doceniona przez recenzentów i graczy, a także stała się pierwszą grą w Polsce, która trafiła do kanonu lektur (powodując tym samym liczne dyskusje i zmieniając nastawienie do gier komputerowych).
+
+# Cel projektu   
+We wstępie przedstawiono wybrane do projektu przedsiębiorstwa i zarysowano tematykę notowań giełdowych. Precyzując, w projekcie poruszone zostaną zagadnienia:
+* analizy notowań i stóp zwrotu przedsiębiorstw
+* dopasowanie modelu szeregu czasowego wraz z weryfikacją
+* badanie kointegracji i przyczynowości
+Projekt ten nie tylko umożliwi matematyczny zapis szeregu czasowego opartego o dane historyczne dotyczące polskich przedsiębiorstw z sektora gamedevu, lecz również na sprawdzenie, czy spółki w tym sktorze mają na sibie wpływ (z punktu widzenia inwestorów)
+
+# Metodyka badań 
+
+Projekt opiera się na analizie szeregów czasowych w postaci cen zamknięcia akcji dwóch spółek giełdowych, dlatego też wykorzystane zostaną techniki pozwalające na uchwycenie zależności między rozważanymi szeregami oraz budowę modelu procesu w oparciu o obserwowane zmiany w czasie cen zamknięcia, a także weryfikację wybranych modeli pod względem dopasowania. Bardzo waznym etapem analizy szeregów czasowych jest analiza stacjonarności. Jest to zasadnicza kwestia, gdyż wykorzystywane w dalszej części modele opierają się na konkretnej postacji szeregów czasowych. Jednym z takich modeli jest model (S)AR(I)MA. To właśnie na jego podstawie dobiera się odpowiedni model ARCH/GARCH wykorzystywany do dokonywania prognoz. Poza wspomnianymi modelami zostanie zbudowany również model VAR, a nastepnie zweryfikowana zostanie wzajemna zależność przyczynowa pomiędzy badanymi spółkami.
+
+# Opis i wizualizacja danych   
+
+Dane do projektu zostały pobrane ze strony Giełdy Papierów Wartościowych jako dzienne ceny zamknięcia akcji dwóch spółek z branży gier - lidera rynku CD Project oraz jednej z największych firm na polskim rynku, czyli 11 bit Studios. Pochodzą one z okresu od 4.01.2016 do 14.01.2021. Liczność zbioru wynosi 1314 obserwacji. W celu zbadania sezonowości pierwotnie pobrane dane uzupełniono o obserwacje z pominiętych (ze względu na święta, przez co giełda była nieczynna) dni roboczych uzupełniając braki obserwacją z dnia poprzedniego. Tak przygotowane dane podzielono na zbiór treningowy liczący 1305 obserwacji oraz zbiór testowy z 9 obserwacjami. Zbiór uczący wykorzystany zostanie do budowy modelu oraz wykazania zależności przyczynowych pomiędzy analizowanymi szeregami, natomiast na podstawie pozostałej części danych wykonana zostanie prognoza i zbadane zostanie dopasowanie modelu.      
+
+Na wstępie warto zobrazować sobie na wykresie jak kształtowały się ceny zamknięcia akcji obu firm w zależności od czasu. 
+
+```{r,echo=FALSE}
+#Odczyt przygotowanego pliku
+dane<-as.data.frame(read_xlsx('C:/Users/Admin/Desktop/MATERIAŁY AGH/II stopień/I rok/II semestr/Ekonometria Finansowa i Dynamiczna/Projekty/Projekt/DaneProjekt.xlsx'))
+dane[1:length(dane[,1])-1,] <- dane[2:length(dane[,1]),]
+
+#dane[,1]<-as.Date(dane[,1], format="%Y-%m-%d")
+summary(dane)
+colnames(dane)<-c("Data","Zamkniecie_11bit","Zamkniecie_CDPR")
+
+#Podzial danych
+train <- dane[1:1305,]
+test <- dane[1306:1314,]
+
+#plot
+plot(train[,1], train[,2], type='l', xlab='Czas', ylab='Ceny zamknięcia',col="red",ylim = c(0, max(train[,2])))
+points(train[,1], train[,3], type='l')
+legend("topleft", legend=c("11 bit","CDPR"), col=c("red","black"),lty=1:2, cex=0.8)
+```
+
+W rozpatrywanym okresie czyli od początku 2016 roku aż do końca 2020 roku ceny zamknięcia akcji 11 bit Studios były zawsze wyższe niż analogiczne ceny twórców Cyberpunka 2077. Najpewniej wpływ na taką sytuację ma liczba wyemitowanych akcji, która dla CD Projectu jest zdecydowanie większa. Nawiązując do głównego celu projektu, czyli badania zależności przyczynowych pomiędzy omawianymi przedsiębiorstwami na podstawie wykresu można stwierdzić, iż zależność występuje, gdyż ceny podążają w tym samym kierunku praktycznie przez cały okres.   
+Wykres ten świetnie przedstawia reakcję giełdy na wydarzenia związane z sytuacją wskazanych przedsiębiorstw oraz ogólnoświatową. Dla 11bit najwyższą wartość akcje osiągnęły w okresie w którym miała miejsce konferencja inwestorska, gdzie przedstawiono m. in. plany na przyszłość. Spowodowało to, że pod koniec czerwca wartość cen zamknięcia przekroczyła barierę 600 PLN za akcję. Drugi ze szczytowych okresów związany był z premierą gry Frostpunk (24.04.2018). Już wtedy 11bit cieszyło się dobrą reputacją po niezwykle ciepłym przyjęciu This War of Mine (która zdobyła średnią 83% w serwisie Metacritic, gdzie brane pod uwagę są jedynie recenzje z uznanych portali branżowych). Premiera Frostpunk (gry ponownie zmuszającej gracza do trudnych wyborów) utwierdziła graczy w tym przekonaniu (tym razem 84% w serwisie Metacritic)  i znacząco wpłynęła na ówczesne ceny akcji, podnosząc je z poziomu 200 PLN, aż do 500 PLN.   
+
+Premiera nowej gry nie zawsze ma jednak pozytywny wpływ na notowania giełdowe. Dobrym kontrprzykładem jest premiera Cyberpunk'a 2077. Po ogromnym sukcesie trzeciej części Wiedźmina gracze spodziewali się równie ambitnego i solidnie przygotowanego tytułu. Dodatkowo działania marketingowe jedynie utwierdzały ich w tym przekonaniu. Cyberpunk 2077 miał być grą rewolucyjną, prawdziwym opus magnum CD Projekt RED. Gra była trzykrotnie opóźniana, aby ostatecznie zadebiutować 10 grudnia 2020 roku. tuż przed tą datą wartość akcji CD Projektu osiągnęła drugą najwyższą wartość w historii (około 443 PLN), aby następnie spaść do poziomu 256 PLN w okresie przedświątecznym. Wpłynęły na to problemy ze stabilnością rozgrywki, ogromna ilość błędów oraz nieprzemyślane rozwiązania zastosowane w grze. Gra ta stała się wręcz precedensem - niektóre kanały jej dystrybucji zostały zamknięte (e względu na niezgodność towaru z umową), Metacritic zastosował oddzielne skale dla wersji na komputery oraz konsole (na niektórych z nich produkt był wręcz niegrywalny), a sam CD Projekt zobowiązał się do zwrotu pieniędzy dla osób które zakupiły produkcję przed premierą i były nią rozczarowane. Nad przedsiębiorstwem widniało również widmo pozwu zbiorowego, lecz kryzys ten został zażegnany. Wszystkie wymienione problemy przyczyniły się do ogromnego spatku cen akcji (oraz znacznego zwiększenia wolumenu obrotu) pod koniec 2020 roku. Lecz w rozpatrywanym okresie miały miejsce również wydarzenia sprzyjające wzrostowi cen akcji CD Projektu - była to np. premiera serialu Wiedźmin produkcji Netflixa, która sprawiła że kolejne osoby sięgały po komputerową adaptację przygód Białego Wilka (nawet po 4,5 roku po premierze). Spowodowana tym podwyższona sprzedaż pod koniec roku 2019 r. prawdopodobnie wpłynęła na postępujący wzrost cen akcji na początku roku 2020. 
+Obydwa przedsiębiorstwa zostały natomiast dotknięte nerwowymi reakcjami inwestorów na rozwój pandemii koronawirusa COVID-19, które w Europie miały miejsce na początku marca 2020. Był to moment gdy poziom cen tych przedsiębiorstw był do siebie najbardziej zbliżony.    
+
+W celu lepszego poznania danych poniżej zamieszczono podstawowe statystyki opisowe:    
+
+```{r,echo=FALSE}
+describe(train[,2:3])
+```
+
+Analizując statystyki opisowe obu szeregów czasowych mozna zauważyć, że charakteryzowały się one trendem wzrostowym, jednak w przypadku cen zamknięcia akcji 11 bit Studio zarówno wzrosty jak i spadki były większe o czym świadczy większa wariancja wahań niż dla cen zamknięcia akcji CD Project. Również średnia cena zakmnięcia akcji jest zdecydowanie większa dla analizowanej spółki w porównaniu z liderem sektora gier. Ceny minimalne oraz maksymalne zdają się potwierdzać poprzednie stwierdzenie dotyczące liczby akcji, która może mieć główny wpływ na kształtowanie się cen akcji.
+ 
+
+# Analiza stacjonarności   
+
+Stacjonarność może występować jednej z trzech form: jako ścisła stacjonarność, słaba stacjonarność oraz niestacjonarność. Chan[^1] definiuje zbiór elementów {$$X_t$$} jako ściśle stacjonarny, jeżeli dla każdego n, dla każdego $$(t_1,…,t_n)$$ i dla każdego h,   
+
+WZÓR W WORDZIE!!!!!!!!!!!!!!!!!!!   
+
+gdzie operator WORD oznacza równość rozkładów.   
+
+Jednak taka definicja jest bardzo restrykcyjna, ponieważ zakłada stałość w czasie zarówno wariancji, jak i średniej, dlatego też warunek ten, z reguły, jest trudny do zweryfikowania. W tym miejscu warto zwrócić uwagę na drugi rodzaj stacjonarności, czyli tzw. słabą stacjonarność, która jest już wystarczająca do dalszej analizy szeregów czasowych. Opiera się ona na dwóch założeniach:
+- $$E(X_t)=𝜇$$, czyli stałej wartości średniej oraz   
+- $$cov(X_t, X_{t+h})=\gamma(h)$$ które oznacza, że kowariancja zależy tylko i wyłącznie  od opóźnienia w czasie.    
+
+Ostatnim rodzajem stacjonarności jest niestacjonarność, która dotyczy procesu stochastycznego, w którym co najmniej jedna z wartości takich jak średnia, wariancja czy funkcja autokorelacji ulega zmianie wraz z upływem czasu. W takich przypadkach wymagane jest podejście, które pozwoli przekształcić szereg niestacjonarny w stacjonarny. Do zbadania szeregów czasowych pod kątem stacjonarności użyte zostaną dwa testy –
+rozszerzony test Dickey’a-Fullera (test ADF) oraz test Kwiatkowskiego-Phillipsa-Schmidta-Shina (test KPSS).   
+
+Test KPSS różni się od tradycyjnych testów weryfikujących występowanie pierwiastka jednostkowego, ponieważ testowana jest tu niestacjonarność przeciwko hipotezie zerowej stanowiącej o stacjonarności szeregu. Rozważany jest szereg czasowy $$\{ε_t\}_{t∈N_0}$$ postaci [^2]:
+
+$$ε_t = \beta_t + r_t+e_t$$   
+
+gdzie $$\{ε_t\}_{t∈N_0}$$ to ciąg niezależnych zmiennych losowych o rozkładzie normalnym $$N(0,σ_u^2)$$, natomiast szereg $$\{r_t\}_{t∈N_0}$$ jest błądzeniem losowym   
+
+$$r_t=r_{t-1}+u_t$$   
+
+w którym $$\{u\}_{t∈N_0}$$ również jest ciągiem niezależnych zmiennych losowych o rozkładzie normalnym $$N(0,σ_u^2)$$. Hipotezy testu KPSS można zapisać następująco:   
+
+H_0: $$σ_u^2=0$$,      
+H_1: $$σ_u^2>0$$.      
+
+Parametry szeregu $$\{ε_t\}_{1\leq t \leq N}$$ są szacowane metodą najmniejszych kwadratów, a następnie po ustaleniu rzędu opóźnienia k obliczana jest suma reszt oraz wartość estymatora wariancji długookresowej reszt. Po wykonaniu wspomnianych czynności można przejść do obliczenia statystyki testowej zgodnej ze wzorem:
+		$$η=(\sum_{t=1}^N{S_t^2})/(N^2 S^2 (k))$$,	   
+gdzie:
+$$S_t$$ – suma reszt szeregu $$ε_t$$,   
+$$S^2(k)$$ – estymator wariancji długookresowej reszt,   
+N – liczba obserwacji,   
+k – rząd opóźnienia.      
+
+Wartość krytyczna odczytywana jest z odpowiednich tablic. Gdy statystyka obliczona w teście jest większa niż ta odczytana z tablic, hipoteza zerowa jest odrzucana na poziomie istotności α, a szereg czasowy uznaje się za niestacjonarny. W przeciwnej sytuacji nie ma podstaw do odrzucenia hipotezy zerowej.    
+
+Drugim z wykorzystanych testów jest rozszerzony test Dickey'a-Fullera. Test ADF wykorzystuje pojęcie pierwiastka jednostkowego i jego związku z brakiem stacjonarności. Obecność pierwiastka jednostkowego wpływa na rekację szregu czasowego na wystąpienie *impulsu* (nagłego zaburzenia wartości jednego z jego wyrazów) - gdy występuje on to rekacja taka będzie stałą i nigdy nie wygaśnie. Natomaist w przypadku jego braku, reakcja stopniowo będzie podlegać wygaszeniu. Opisywane zjawisko dotyczy modelu:
+$$y_t=\gamma y_{t-1}+\varepsilon_t$$
+Stał on się podstawą do opracowanie testu Dickeya-Fullera, którego rozszerzoną wersję stanowi test ADF. Wymaga on oszacowania następującego równania:
+$$y_t=\alpha+\delta t+\gamma y_{t-1} + \Sigma^k_{j=1} \Theta_j\Delta y_t-j + e_t$$
+Taka postać równania umożliwia włączenie procesów ARMA dla błędów losowych [^3] . W teście ADF hipoteza zerowa oznacza brak stacjonarności (szereg jest charakteryzowany przez process pierwiastka jednostkowego), natomiast hipoteza alternatywna - że szereg jest stacjonarny. Zapisać można je w postaci:
+$$H_0: \gamma = 0 $$
+$$H_1: \gamma < 0 $$
+Statystyka testu ma postać:
+$$DF_\tau = \frac{\hat\gamma}{SE(\hat\gamma)} $$
+Postać ta zbliżona jest do statystyki testu istotności t-Studenta (również dzielimy wartość parametru przez jego błąd), natomiast rozkład tej statystyki w znaczący sposób różni się od rozkładu t, przez co należy stosować specjalne tablice dotyczące testu ADF [^4] . Wadą testu ADF jest mała moc, natomiast można stosować je  razem z testami posiadajacymi odwrotne hipotezy (np. test KPSS) w ramach *analizy potwierdzającej*, aby uzyskać dodatkowe potwierdzenie prawdziwości otrzymywanych wyników. Natomiast należy odnotować, że badania dotyczące tego podejścia podważają jego skuteczność [^5].
+
+# Logarytmy oraz stopy zwrotu
+
+```{r,echo=FALSE}
+#Przekształcenie cen do logarytmów
+train[,4] = log(train[,2])
+train[,5] = log(train[,3])
+
+tseries::adf.test(train[,4], alternative = "stationary")
+tseries::adf.test(train[,5], alternative = "stationary")
+
+tseries::kpss.test(train[,4])
+tseries::kpss.test(train[,5])
+```
+
+Po przekształeceniu danych do postaci logarytmów oraz zastosowaniu wyżej wymienionych testów można wnioskować, iż oba szeregi czasowe są niestacjonarne, gdyż z testu ADF p-value jest zdecydowanie większe niż przyjęty poziom istotności wynoszący 5%, natomiast p-value z testu KPSS jest mniejsze niż 5%, więc wskazuje to na odrzucenie hipotezy zerowej stanowiącej o stacjonarności.   
+
+W takiej sytuacji literatura wskazuje na kilka możliwych podejść do przekształcenia danych do postaci stacjonarnej. Jednym z nich jest różnicowanie aż do momentu, gdy szeregi będą już stacjonarne. Innym popularnym sposobem radzenia sobie z niestacjonarnością jest transformacja Boxa-Coxa. W tym przypadku podjęto decyzję o zastosowaniu różnicowania. 
+
+```{r,echo=FALSE}
+dane6 <- diff(train[,4], differences=1)
+dane7 = diff(train[,5], differences=1)
+
+tseries::adf.test(dane6, alternative = "stationary")
+tseries::adf.test(dane7, alternative = "stationary")
+
+tseries::kpss.test(dane6)
+tseries::kpss.test(dane7)
+
+```
+
+Zastosowanie pierwszych różnic pomogło otrzymać stacjonarne szeregi, ponieważ wartości p-value z testu ADF wskazują na odrzucenie hipotezy zerowej mówiącej o niestacjonarności, a w przypadku testu KPSS wartości p-value były większe niż przyjęty poziom istotności (5%), więc nie było podstaw do odrzucenia hipotezy zerowej. Tak przygotowane dane będą mogły posłużyć do budowy modelu.         
+
+# Analiza autokorelacji
+
+Analiza autokorelacji jest jest jednym z głównych kroków prowadzących do budowy odpowiedniego modelu, ponieważ dostarcza informacje na temat parametrów przyszłego modelu. Analizując funkcję autokorelacji można wyciągnąć wnioski co do części MA, czyli średniej ruchomej. Analogiczne dane dostarcza funkcja PACF dla części AR modelu. Pamiętając, iż analizowane dane okazały się stacjonarne dopiero po pierwszym różnicowaniu, można założyć, że jednym z rozważanych modeli będzie model ARIMA lub, gdy wykryta zostanie sezonowość, model SARIMA. 
+
+```{r,echo=FALSE}
+acf(dane6, plot = TRUE)
+pacf(dane6, plot = TRUE)
+```
+
+# Wybór modelu dla danych 11 bit Studios
+
+Z wykresu funkcji ACF można odczytać, że istotne są współczynniki autokorelacji dla opóźnień równych 0, 1, 2 oraz dla opóźnienia równego 9. Stąd też parametr *q* przyjmie najpewniej jedną z wymienionych wartości. Przechodząc do parametru *p*, jego wartość wyniesie 1 lub 2, gdyż na podstawie wykresu tylko te współczynniki autokorelacji cząstkowej są istotne.   
+
+## Auto arima
+
+```{r,echo=FALSE}
+funkcja <- auto.arima(train[,4], trace = TRUE)
+coeftest(funkcja)
+funkcja$aic
+cat("Model ARIMA")
+funkcja2 <- arima(train[,4], order = c(0,1,2)) #Najlepszy 
+coeftest(funkcja2) #współczynniki są istotne
+funkcja2$aic
+shapiro.test(funkcja2$residuals)
+```
+
+Funkcja auto.arima() dostępna w języku R służy do wybrania najlepszego modelu analizując kryteria informacyjne: AIC oraz BIC (najlepszy model to ten z najmniejszymi wartościami kryteriów). Na podstawie powyższych wyników wspomnianej funkcji model najlepszy to model ARIMA(1,1,2). Jednak nie została zweryfikowana potencjalna sezonowość, dlatego też zostanie dodana część odpowiadająca za możliwą sezonowość, a następnie wybrane modele zostaną poddane testowi istotności parametrów. Jeżeli wszystkie parametry będą istotne statystycznie ostateczny model zostanie wybrany na podstawie kryteriów informacyjnych. W modelu ARIMA(1,1,2) nie wszystkie zmienne są istotne, przez co należy wybrać inny model, w którym każda zmienna pozytywnie przejdzie test istotności. Rozważany będzie model ARIMA(0,1,2) - następny pod względem kryteriów informacyjnych.
+
+## Wybór i weryfikacja istotności parametrów modelu SARIMA
+
+```{r,echo=FALSE}
+
+
+cat("Wybór odpowiedniej postaci Sarimy")
+cat("AIC")
+table200<-matrix(NA,5,5)
+rownames(table200)<-c("P=0","P=1","P=2","P=3","P=4")
+colnames(table200)<-c("Q=0","Q=1","Q=2","Q=3","Q=4")
+for(p in 0:4){
+  for(q in 0:4){
+  sarima<-arima(train[,4], order = c(0, 1, 2),seasonal = list(order = c(p,1,q), period = 5), method="ML")
+
+  table200[p+1,q+1]<-sarima$aic
+}
+}
+table200
+cat("BIC")
+for(p in 0:4){
+  for(q in 0:4){
+  sarima<-arima(train[,4], order = c(0, 1, 2),seasonal = list(order = c(p,1,q), period = 5), method="ML")
+
+  table200[p+1,q+1]<-BIC(sarima)
+}
+}
+table200
+
+
+# funkcja1 <- arima(train[,4], order = c(0,1,2), seasonal = list(order=c(3,1,4), period=5)) 
+# coeftest(funkcja1)
+# funkcja1$aic
+# shapiro.test(funkcja1$residuals) #najlepsze, ale są błędy w obliczeniu
+cat("Model SARIMA")
+funkcja3 <- arima(train[,4], order = c(0,1,2), seasonal = list(order=c(0,1,1), period=5)) 
+coeftest(funkcja3) #wszystkie współczynniki są istotne, drugie najlepsze 
+funkcja3$aic
+shapiro.test(funkcja3$residuals)
+
+```
+
+Spośród modeli SARIMA najlepszym był model (0,1,2)(3,1,4)[5] natomiast R napotkał problemy z jego całkowitym opisem (być może przez przeparametryzowanie). Z tego powodu postanowiono wybrać model SARIMA(0,1,2)(0,1,1)[5], który również posiadał odpowiednie wartości kryteriów informacyjnych i co ważniejsze - wszystkie jego parametry były istotne.  
+
+## Normalność rozkładu reszt oraz ich stacjonarność
+
+Wybranymi modelami są zatem ARIMA(0,1,2) oraz SARIMA(0,1,2)(0,1,1)[5]. Choć przeprowadzone powyżej testy normalności Shapiro-Wilka wykazują brak normalności rozkładu reszt, to jednak powołując się na Centralne Twierdzenie Graniczne przyjąć można, że posiadają one asymptotyczny rozkład normalny. Są też stacjonarne, co potwierdza poniższy wykres oraz wynik testu KPSS. Test istotności rownież nie wykazał, by którakolwiek ze zmiennych była nieistotna, co oznacza, że do dalszej analizy zostały wybrane wspomniane dwa modele.     
+
+```{r,echo=FALSE}
+cat("ARIMA")
+tseries::kpss.test(funkcja2$residuals)
+plot.ts(residuals(funkcja2))
+
+cat("SARIMA")
+tseries::kpss.test(funkcja3$residuals)
+plot.ts(residuals(funkcja3))
+```
+W dalszej kolejności postanowiono sprawdzić występowanie efektu ARCH.
+
+# Występowanie efektu ARCH/GARCH
+
+Badania Engle’a [^6] wykazały, że dla pewnych danych może zachodzić zjawisko heteroskedastyczności w wariancji składnika losowego. Najczęściej ma to miejsce w przypadku analizy danych dotyczących zmienności inflacji, stóp zwrotu z inwestycji czy rynków walutowych [^7]. Engle zaproponował więc test pozwalający wykryć niejednorodność w wariancji składnika losowego. Z uwagi na podatność danych finansowych na możliwość występowania efektu ARCH test ten zostanie przeprowadzony na resztach otrzymanych z utworzonego modelu ARIMA oraz SARIMA. Hipotezy testu ARCH-LM:   
+
+H~0~: brak efektu ARCH   
+H~1~: występuje efekt ARCH   
+
+
+```{r,echo=FALSE}
+cat("ARIMA")
+aTSA::arch.test(funkcja2, output = TRUE)
+cat("SARIMA")
+aTSA::arch.test(funkcja3, output = TRUE)
+
+```
+Jak widać efekt ARCH występuje dla opóźnień każdego opóźnienia w obu modelach. Z uwagi na fakt, iż efekt ARCH jest obecny w modelach, warto spróbować zbudować model, który dopuszcza występowanie tego efektu, czyli model GARCH. 
+
+## Model GARCH
+
+GARCH jest to uogólniona forma modelu ARCH stworzona przez Bollersleva. Model ten jest lepszy od ARCH, ponieważ:   
+•	lepiej dostosowuje się on do opisu danych w których na końcach rozkładów występuje znaczna gęstość prawdopodobieństwa (grube ogony)   
+•	nie powoduje otrzymania ujemnej wariancji warunkowej (co mógł powodować ARCH)   
+
+Model ten wyrazić można równaniami:   
+$y_t = \sigma_t\epsilon_t$
+$\sigma_t = \omega + \sum^q_{i=1}\alpha_iy^2_{t-i}+\sum^p_{j=1}\beta_j\sigma^2_{t-j}$   
+
+Gdzie $\epsilon_t$ to Gaussowski biały szum, a $\omega$>0,$\beta$≥0,$\alpha$≥0. W procesie przedstawionym jako GARCH(p,q) zmienność $\sigma_t^2$ teoretycznie jest kształtowana przez nieskończoną liczbę kwadratów opóźnień zmiennej y. Warto również zaznaczyć, że gdy w GARCH(p,q) p=0, to jest to model ARCH(q).
+
+### Wyznaczenie parametrów modelu GARCH
+
+Aby wyznaczyć odpowiednie wartości parametrów p i q w modelu GARCH posłużyć można się wykresami ACF oraz PACF dla kwadratów reszt z modelu ARIMA.
+
+```{r,echo=FALSE}
+cat("ARIMA")
+acf((funkcja2$residuals)^2, plot = TRUE)
+pacf((funkcja2$residuals)^2, plot = TRUE)
+```
+
+Wykres funkcji PACF dla modelu ARIMA(0,1,2) wskazuje, iż opóźnienia równe 1, 3 oraz 5 są istotne, czyli parametr P w modelu GARCH powinien przyjąć jedną z tych wartości. Natomiast z wykresu fukcji ACF można odczytać, że opóźnienia od 1 do 5 są istotne.
+
+```{r,echo=FALSE}
+cat("SARIMA")
+acf((funkcja3$residuals)^2, plot = TRUE)
+pacf((funkcja3$residuals)^2, plot = TRUE)
+```
+
+Dla modelu SARIMA jest podobnie - możliwe wartości parametru Q zawierają się pomiędzy 1 a 5, a dla parametru P rozważane będą wartości 1, 2, 3 oraz 5.   
+
+
+#### ARIMA eGARCH
+
+```{r,echo=FALSE}
+#EGACRH
+cat("Kryterium AIC")
+t_egarch<-matrix(NA,3,3)
+rownames(t_egarch)<-c("P=1","P=3","P=5")
+colnames(t_egarch)<-c("Q=1","Q=2","Q=3")
+for(p in 1:3){
+  for(q in 1:3){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch
+  
+  t_egarch[p,q]<-infocriteria(model_garch)[1]
+}
+}
+t_egarch
+
+cat("Kryterium BIC")
+for(p in 1:3){
+  for(q in 1:3){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch
+  
+  t_egarch[p,q]<-infocriteria(model_garch)[2]
+}
+}
+t_egarch
+
+
+model_garch1 <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(3,3)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch1
+
+model_garch2 <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(1,1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch2
+```
+
+#### ARIMA sGARCH
+
+```{r,echo=FALSE}
+#sGACRH
+cat("Kryterium AIC")
+t_egarch<-matrix(NA,3,3)
+rownames(t_egarch)<-c("P=1","P=2","P=3")
+colnames(t_egarch)<-c("Q=1","Q=2","Q=3")
+for(p in 1:3){
+  for(q in 1:3){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="sGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch
+  
+  t_egarch[p,q]<-infocriteria(model_garch)[1]
+}
+}
+t_egarch
+
+cat("Kryterium BIC")
+for(p in 1:3){
+  for(q in 1:3){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="sGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch
+  
+  t_egarch[p,q]<-infocriteria(model_garch)[2]
+}
+}
+t_egarch
+
+
+model_garch3 <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="sGARCH", garchOrder = c(1,1)), mean.model = list(armaOrder=c(0,1)), distribution.model = "norm"))
+model_garch3
+
+model_garch4 <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="sGARCH", garchOrder = c(2,1)), mean.model = list(armaOrder=c(1,1)), distribution.model = "norm"))
+model_garch4
+```
+
+Dalsza analiza w postaci budowy modelu ARIMA-GARCH nie przyniosła oczekiwanego skutku, gdyż pomimo dobierania różnych wartości parametrów P i Q oraz różnych postaci modelu GARCH nie udało się zbudowac modelu, w którym wszystkie zmienne byłyby istotne. Postanowiono więc porzucić model ARMA-GARCH i skupić się na modelu SARIMA-GARCH, który umożiwiłby uchwycenie potencjalnej sezonowości.
+
+
+#### SARIMA - Przygotowanie external reggressors    
+
+Pierwszym krokiem w kierunku budowy modelu SARIMA-GARCH było przygotowanie zmiennych zero-jedynkowych obrazujących poszczególne dni tygodnia:
+
+- 1,0,0,0,0 - wtorek   
+- 0,1,0,0,0 - środa   
+- 0,0,1,0,0 - czwartek   
+- 0,0,0,1,0 - piątek   
+- 0,0,0,0,0 - poniedziałek  
+
+Zaczynają się one od wtorku, gdyż pierwsza obserwacja dotczyła poniedziałku (5.01.2016), natomaist po jednokrotnym różnicowaniu pierwszy rekord musiał zostać usunięty, stąd początkiem szeregu czasowego jest wtorek, 6 stycznia 2016. Tak przygotowana macierz zostanie przekazana jako argument external regressors dla funkcji ugarchspec(). Jest to konieczne, gdyż żaden z pakietów R nie umożliwia tworzenia modeli SARIMA-GARCH w formie zbliżonej do ARIMA-GARCH (poprzez podanie parametrów P, D i Q). Przekazanie macierzy dummies umożliwi zaznaczenie występującej w danych sezonowości[^8]
+
+```{r, echo=FALSE}
+dummies<-matrix(NA,1305,4)
+dummies[,1]<-rep.int(c(1,0,0,0,0),times=261)
+dummies[,2]<-rep.int(c(0,1,0,0,0),times=261)
+dummies[,3]<-rep.int(c(0,0,1,0,0),times=261)
+dummies[,4]<-rep.int(c(0,0,0,1,0),times=261)
+```
+
+Następnie, podobnie jak w przypadku modelu ARMA-GARCH, dopasowywano różne postaci modelu GARCH oraz różne opóźnienia (przy wyborze opóźnienia kierowano się głównie kryterium AIC, niekiedy również BIC). Należy pamiętać, że wyniki w wierszu P=4 nie powinny być traktowane jako miarodajne, gdyż wykres autokorelacji PACF wykazał, że nie powinno rozpatrywać się tego efektu dla P=4 (wiersz ten natomiast ) 
+
+#### SARIMA - eGARCH
+
+```{r,echo=FALSE}
+
+#EGACRH
+cat("Kryterium AIC")
+t_egarch<-matrix(NA,5,5)
+rownames(t_egarch)<-c("P=1","P=2","P=3","P=4","P=5")
+colnames(t_egarch)<-c("Q=1","Q=2","Q=3","Q=4","Q=5")
+t_egarchBIC<-matrix(NA,5,5)
+rownames(t_egarchBIC)<-c("P=1","P=2","P=3","P=4","P=5")
+colnames(t_egarchBIC)<-c("Q=1","Q=2","Q=3","Q=4","Q=5")
+for(p in 1:5){
+  for(q in 1:5){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm"))
+
+  
+  t_egarch[p,q]<-infocriteria(model_garch)[1]
+  t_egarchBIC[p,q]<-infocriteria(model_garch)[2]
+}
+}
+cat("Kryterium AIC")
+t_egarch[-4,]
+cat("Kryterium BIC")
+t_egarchBIC[-4,]
+
+
+model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(5,5)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm"))
+model_garch #najlepszy i o wszystkich istotnych parametrach - (5/5)
+
+```
+Najlepszym modelem z rodziny eGARCH okazał się model o parametrach P=5 oraz Q=5 (pod względem kryterium informacyjnego AIC). Choć według kryteriów BIC nie jest ona najlepszy, to jednak również może być traktowany jako jeden z lepszych wyborów. Szczególnie, że mModel ten posiada wszystkie parametry istotne.
+
+#### SARIMA - sGARCH
+
+```{r,echo=FALSE}
+#sGACRH
+cat("Kryterium AIC")
+t_sgarch<-matrix(NA,5,5)
+rownames(t_sgarch)<-c("P=1","P=2","P=3","P=4","P=5")
+colnames(t_sgarch)<-c("Q=1","Q=2","Q=3","Q=4","Q=5")
+for(p in 1:5){
+  for(q in 1:5){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="sGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm"))
+
+  
+  t_sgarch[p,q]<-infocriteria(model_garch)[1]
+}
+}
+t_sgarch[-4,] #Żaden z najlepszych modeli (1,4)/(1,2) nie posiadał wszystkich parametów istotnych
+model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="sGARCH", garchOrder = c(1,2)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm")) 
+model_garch #
+
+```
+Spośród rozpatrywanych modeli sGARCH najlepsze wartości kryterium informacyjnego AIC posiadały modele (1,4) oraz (1,2). Pierwszy z modeli nie posiadał natomiast wszystkich parametrów istotnych - mogło być to spowodowane przeparametryzowaniem. Z tego powodu model o niejszej wartości Q powinien spełnić wymóg istotności parametrów - tak jednak się nie stało i model ten również posiadał parametry nieistotne - na przykład ma1, co wykluczało jego wykorzystanie w dalszej analizie. 
+
+#### SARIMA - gjrGARCH
+
+```{r,echo=FALSE}
+
+#gjrGACRH
+cat("Kryterium AIC")
+t_gjr_garch<-matrix(NA,3,5)
+rownames(t_gjr_garch)<-c("P=1","P=2","P=3")
+colnames(t_gjr_garch)<-c("Q=1","Q=2","Q=3","Q=4","Q=5")
+for(p in 1:3){
+  for(q in 1:5){
+  model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="gjrGARCH", garchOrder = c(p,q)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm"))
+
+  
+  t_gjr_garch[p,q]<-infocriteria(model_garch)[1]
+}
+}
+t_gjr_garch #Żaden z najlepszych modeli (3,4)/(3,5)/(1,2) nie posiadał wszystkich parametów istotnych
+model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="gjrGARCH", garchOrder = c(3,5)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm")) 
+model_garch #
+
+```
+
+Podczas projektu dotyczącego spółki z sektora farmaceutycznego to właśnie model gjr-GARCH najlepiej przedstawił badany szereg czasowy. Dla danych dotyczących polskiego gamedevu wyniki były jednak równie rozczarowujące co w przypadku modeli sGARCH. Żaden z trzech najlepszych modeli, pomimo różnej liczby parametrów nie posiadał wszystkich wartości istotnych. Były to modele:  (3,5)/(3,4)/(1,2)
+
+Zatem ostateczną postacią modelu okazał się model SARIMA-eGARCH(0,1,1)(5,1,5)[5]. Jest to jedyny model, w którym wszystkie zmienne są istotne.
+
+# Prognoza na zbiorze uczącym (Zadanie 9)
+
+Aby uzyskać wartości dopasowane przez model SARIMA(0,1,2)(0,1,1)[5] posłużono się funkcją fitted(). Parametr h oznaczał w niej przesunięcie - wybrano wartości odleglejsze o 5, od liczby dni roboczych w tygodniu, wyznaczających zarazem odległość pomiędzy analogicznymi sezonami. Następnie stworzono wykres porównujący wartości rzeczywiste z wartościami dopasowanymi przez model (funkcja autoplot()). W tym celu niezbedne było potraktowanie danych jako typ time series (funkcja ts()). Jak można zauważyć, wartości dopasowane przez model odpowiadają wartością rzeczywistym - zatem na danych treningowych model sprawdził się doskonale. 
+```{r, echo=FALSE}
+
+
+#zadanie 9 dla modelu bez GARCH
+library(stats)
+#predict(funkcja,n.ahead = 9)
+fit<-arima(train[,4], order = c(0,1,2), seasonal = list(order=c(0,1,1), period=5))
+fted<-fitted(fit, h=5)
+autoplot(ts(train[,4]), series="Rzeczywiste wartości") +
+  autolayer(ts(fted),
+    series="Wartości dopasowane przez model")
+```
+
+## Zadanie 9 (GARCH)
+
+Postanowiono sprawdzić dodatkowo również dokładność dopasowania danych z modelu GARCH. Wykres otrzymany za pomocą funkcji autoplot() znacznie odbiega od wykresu dla modelu SARIMA. Postać wykresu oczywiście jest inna ze względu na inny typ danych (SARIMA - logarytmy z notowań; SARIMA-GARCH - logarytmiczne stopy zwrotu). Lecz wartości dopasowane przez model SARIMA-eGARCH(0,1,2)(5,1,5)[5] nie posiadają aż tak znaczących odchyleń od 0, jak rzeczywiste dane - natomiast kierunek ich zmian jest podobny. Jest to natomiast poprawna zalezność - analogiczne rezultaty uzyskali S. Chand, S. Kamal oraz I. Ali w artykule *Modeling and volatility analysis of share prices using ARCH and GARCH models*[^9] , utrzymując przy tym poprawność dopasowania modelu. Przedstawiono również tablicę pomyłek (confusion matrix) przedstawiającą dokładność przewidywań modelu. Przy określeniu progu na poziomie .85 percentyla (wartości powyżej to wystąpienie "szoku giełdowego", określane jako TRUE, a poniżej to "norma" - FALSE), większość wskazań modelu zakwalifikowano jako TN - poprawne wskazanie stanu FALSE. Część wskazań to FN - błędne wskazanie stanu FALSE, podczas gdy w rzeczywistości był to TRUE. Natomiast nie wystąpiły zarówno wartości TP, jak i FP - co wynika z niewielkich wahań przyjmowanych przez wartości dopasowane przez model. Takie podejście do weryfikacji poprawności dopasowania modelu z częścią GARCH zaprezentował Bohdan Pavlyshenko[^10].   
+Postanowiono wykonać również badanie poprawności prognoz pod kątem znaku. Gdy stopa zwrotu była liczbą dodatnią, to była klasyfikowana jako 1. W każdym innym przypadku traktowana była ona jako 0. Rezultaty porównania tego sposobu klasyfikacji przez model z danymi rzeczywistymi przedstawia druga macierz pomyłek. Dla tego sposobu klasyfikacji obliczono również miary takie jak:
+* dokładność (59,8%) - taka część zbioru została poprawnie zaprognozowana
+* czułość (63,3%) - określa procent pokrycia klasy pozytywnej przez pozytywne przewidywanie
+* specyficzność (29,2%) - określa procent pokrycia klasy negatywnej przez prognozę negatywną
+
+Stworzono również krzywą ROC, która jest graficznym przedstawieniem efektywności modelu - im jest on lepszy, tym bardziej krzywa oddala się od krzywej y=x. Otrzymane AUC wynosi 0,53, co jest niezbyt zadowalającym wynikiem (dla AUC-0,5 klasyfikator jest losowy, a dla równego 1 - idealny).[^11]
+
+```{r, echo=FALSE}
+model_garch <- ugarchfit(dane6, spec = ugarchspec(variance.model = list(model="eGARCH", garchOrder = c(5,5)), mean.model = list(armaOrder=c(0,2), external.regressors = dummies), distribution.model = "norm"))
+ 
+fted<-fitted(model_garch)
+autoplot(ts(dane6), series="Training data") +
+  autolayer(ts(fted),
+    series="5-step fitted values")
+#confusion matrix, przy progu 0.85 (0.85 percentyl)
+dane8<-abs(dane6)
+fted8<-abs(fted)
+cutoff<-quantile(dane8, c(.85)) 
+dane9<-matrix(NA,1304,2)
+
+for(i in 1:1304){
+  if(dane8[i]>cutoff)
+    dane9[i,1]<-TRUE
+  else
+    dane9[i,1]<-FALSE
+  if(fted8[i]>cutoff)
+    dane9[i,2]<-TRUE
+  else
+    dane9[i,2]<-FALSE
+}
+
+TP<-TN<-FP<-FN<-0
+for(i in 1:1304){
+  if((dane9[i,1]==TRUE)&(dane9[i,2]==TRUE))
+    TP=TP+1
+  if((dane9[i,1]==FALSE)&(dane9[i,2]==TRUE))
+    FP=FP+1
+  if((dane9[i,1]==TRUE)&(dane9[i,2]==FALSE))
+    FN=FN+1
+  if((dane9[i,1]==FALSE)&(dane9[i,2]==FALSE))
+    TN=TN+1
+    
+}
+confusionMatrix<-matrix(NA,2,2)
+colnames(confusionMatrix)<-c("Actual-positive","Actual-negative")
+rownames(confusionMatrix)<-c("Predicted-positive","Predicted-negative")
+confusionMatrix[1,1]<-TP
+confusionMatrix[1,2]<-FP
+confusionMatrix[2,1]<-FN
+confusionMatrix[2,2]<-TN
+cat("confusion matrix, przy progu 0.85 (0.85 percentyl)")
+confusionMatrix
+
+signum<-matrix(0,1304,2)
+colnames(signum)<-c("Real","Predicted")
+for(i in 1:1304){
+  if(dane6[i]>0)
+    signum[i,1]<-1
+  if(fted[i]>0)
+    signum[i,2]<-1
+}
+library(pROC)
+
+roc2<-roc(response=signum[,1],predictor = signum[,2],ci=TRUE,plot=TRUE,auc=TRUE,smooth=FALSE)
+plot(roc2)
+cat("Pole pod krzywą ROC (AUC) wynosi",roc2$auc)
+
+dane9<-signum
+TP<-TN<-FP<-FN<-0
+
+for(i in 1:1304){
+  if((dane9[i,1]==1)&(dane9[i,2]==1))
+    TP=TP+1
+  if((dane9[i,1]==0)&(dane9[i,2]==0))
+    FP=FP+1
+  if((dane9[i,1]==1)&(dane9[i,2]==0))
+    FN=FN+1
+  if((dane9[i,1]==0)&(dane9[i,2]==1))
+    TN=TN+1
+    
+}
+
+confusionMatrix[1,1]<-TP
+confusionMatrix[1,2]<-FP
+confusionMatrix[2,1]<-FN
+confusionMatrix[2,2]<-TN
+cat("confusion matrix, przy poprawności znaku (+ to 1, wartość 0 lub - to 0)")
+confusionMatrix
+
+dokladnosc<-(TP+TN)/(TP+TN+FN+FP)
+cat("Dokładność",dokladnosc)
+czulosc<-TP/(TP+FN)
+specyficznosc<-FN/(TN+FP)
+cat("Czułość",czulosc)
+cat("Specyficzność",specyficznosc)
+```
+
+
+
+# Prognoza na zbiorze testowym (Zadanie 11)
+
+Po wyestymowaniu zarówno modelu SARIMA, jak i GARCH oraz weryfikacji ich na zbiorze treningowym, postanowiono sprawdzić rezultaty ich prognoz dotyczących zbioru testowego. Satysfakcjonujące rezultaty dotyczące zbioru treningowego nie muszą bowiem oznaczać idealnego modelu, który potrafiłby skutecznie przewidywać przyszłość. Modele budowane są w oparciu o przeszłe dane i to w oparciu o nie estymowane są ich parametry, zatem często da zupełnie nowych danych ich wyniki nie spełniają oczekiwań. Szerzej w uczeniu maszynowym takie zjawisko określa się mianem przetrenowania modelu. Taki model tak mocno dostosował się do znanych danych i charakteryzuącej je struktury, że dla kolejnych obserwacji odbiegających od przyjętego schematu staje się wręcz bezradny.   
+Weryfikacji poddano zarówno model SARIMA jak i SARIMA-GARCH:
+
+## Prognozowanie - SARIMA
+
+```{r, echo=FALSE}
+
+preds<-predict(fit,n.ahead = 9)
+test[,4] = log(test[,2])
+
+plot(test$Data, test[,4], type='l', xlab='Czas', ylab='Logarytmy notowań',col="red")
+points(test[,1], preds$pred, type='l')
+
+y=matrix(NA,8,5);
+for(i in 1:8){
+  y[i,1] = preds$pred[i]
+  y[i,2]<-test[i,4]
+  y[i,3]<-y[i,2]-y[i,1]
+  y[i,4]<-abs(y[i,2]-y[i,1])
+  y[i,5]<-abs((y[i,2]-y[i,1])/y[i,2])
+}
+colnames(y)<-c("Prognoza","Wartosc realna","y-yP","|y-yp|","|(y-yp)/y|")
+
+round(y,4)
+
+ME<-sum(y[,3])/8
+cat("ME: ", round(ME,4))
+
+MAE<-sum(y[,4])/8
+cat("MAE: ", round(MAE,4))
+
+MSE<-sum(y[,3]^2)/8
+cat("MSE: ",round(MSE,4))
+
+MAPE<-(sum(y[,5])/8)*100
+cat("MAPE: ",round(MAPE,4),"%")
+```
+
+Predykcji dokonano z wykorzystaniem funkcji predict(). Powyższy wykres prezentuje wartości rzeczywiste oraz prognozowane przez model. Zauważyć można znaczne różnice, natomiast model dąży do symulacji wahań. Powyższa tabela przedstawia konkretne wartości prognoz, wartości rzeczywistych oraz ich różnic, służących do obliczenia błędów predykcji ex-post (ME,MAE,MSE oraz MAPE).
+* ME (-0.0057) - średni błąd predykcji (ang. mean error - ME) ex post . Stosowanie tego błędu jest niewskazane, gdy wartości różnic pomiędzy wartością rzeczywistą a prognozowaną są zaróWno dodatnie jak i ujemne. ME jest wówczas sztucznie zaniżany, gdyż wartości te niwelują się nawzajem - po przeanalizowaniu tabeli z prognozami zauważyć można, że właśnie takie zjawisko miało miejsce.    
+* MAE (MAE:  0.0161) - średni bezwzględny błąd predykcji (ang. mean absolute error - MAE) ex post. Różnica wartości MAE i ME wskazywać może na wahania zmiennej objaśnianej w czasie. Jej wartość zmiejszała się i zwiększała, przez co różnica jej wartości od wartości prognozowanej była dla części obserwacji ujemna, a dla części - dodatnia. W projekcie MAE jest około trzy razy większy niż ME, co potwierdza, że nie powinno stosować się zwykłego średniego błędu predkcji do oceny jakości prognoz
+* MSE (0,0005) - średniokwadratowy błąd predykcji (ang. mean square error - MSE) ex post. Błąd ten wykorzystuje kwadrat różnicy pomiędzy wartością rzeczywistą zmiennej objaśnianej a jej prognozą. Pozwala to sprawdzić, czy prognoza zawiera znaczne błędy - zostaną one wówczas podkreślone w dużej wartości MSE. Zatem błąd ten ma zastosowanie w ocenie poprawności wykonania prognozy, gdyż wskaże istotne różnice ogące wynikać z błędu w formule lub danych (np. występowanie outlierów). MSE może posłużyć również do sprawdzenia użyteczności prognoz, ponieważ jego duża wartość wskazuje na wysokie ryzyko otrzymania wyniku znacznie odbiegającego od rzeczywistości. Natomiast gdy głównym celem jest zaprezentowanie różnic pomiędzy prognozami dokonywanymi z użyciem stworzonego modelu, a rzeczywistością lepiej sprawdzi się MAE. Błąd ten nie tylko jest bardziej miarodajny niż ME, lecz posiada ten sam rząd wielkości co dane - zatem można interpretować go w porównaniu do wartości prognoz. Uzyskana wielkość MSE podkreśla kolejną z jego wad - dla danych w których różnice pomiędzy prognozami, a wartościami rzeczywistymi wyrazić można w częściach dziesiątych czy też setnych błąd średniokwadratowy przybiera bardzo niewielkie wartości (co wynika z podnoszenia do kwadratu). Dla rozpatrywanych danych nie jest to bardzo negatywny aspekt (który jak podkreślono powyżej, potwierdza brak znaczących błędów), natomiast dla obliczeń w których precyzja jest niezmienie istotna, a rząd wielkości niewielki (np. stężenia niebezpiecznych substancji w powietrzu) MSE zupełnie się nie sprawdzi.  
+* MAPE (0,2614%) - średni bezwzględny procentowy błąd predykcji (ang. mean absolute percentage error - MAPE) pozwala na jeszcze bardziej intuicyjną ocenę prognoz, gdyż wyraża się go jako procentowa część wartości prognozy. W posługiwaniu się nim nie trzeba znać zatem wartości prognoz, aby określić ich jakość. Błąd ten nie powinien być jednak stosowany w każdym przypadku - ze względu na fakt, że w mianowniku równania znajduje się wartość zmiennej objaśnianej, dla danych w których zmienne te są bliskie 0 wartości MAPE będą skrajnie duże (a dla y=0 wystąpi nawet błąd kalkulacji). Dla omaiwanych danych, w których wartości są znacznie większe niż 0, błąd ten sprawdza się i pozwala na intuicyjną interpretację - model SARIMA w prognozach myli się średnio o 0,26% ich wartości. 
+
+## Prognozowanie - SARIMA-GARCH
+
+```{r, echo=FALSE}
+
+modelForecast=ugarchforecast(model_garch, data = NULL, n.ahead = 8, n.roll= 0, out.sample = 0)
+test[,4] = log(test[,2])
+realForecast <- diff(test[,4], differences=1)
+predictedValues<-fitted(modelForecast)
+
+plot(test[1:8,1], realForecast, type='l', xlab='Czas', ylab='Przyrosty logarytmów notowań',col="red")
+points(test[1:8,1], fitted(modelForecast), type='l')
+
+
+y=matrix(NA,8,5);
+for(i in 1:8){
+  y[i,1] = predictedValues[i]
+  y[i,2]<-realForecast[i]
+  y[i,3]<-y[i,2]-y[i,1]
+  y[i,4]<-abs(y[i,2]-y[i,1])
+  y[i,5]<-abs((y[i,2]-y[i,1])/y[i,2])
+}
+colnames(y)<-c("Prognoza","Wartosc realna","y-yP","|y-yp|","|(y-yp)/y|")
+
+round(y,4)
+
+ME<-sum(y[,3])/8
+cat("ME: ", round(ME,4))
+
+MAE<-sum(y[,4])/8
+cat("MAE: ", round(MAE,4))
+
+MSE<-sum(y[,3]^2)/8
+cat("MSE: ",round(MSE,4))
+
+MAPE<-(sum(y[-2,5])/8)*100
+cat("MAPE: ",round(MAPE,4),"%")
+
+library(pROC)
+```
+
+Predykcji dokonano z wykorzystaniem funkcji ugarchforecast(). Powyższy wykres prezentuje wartości rzeczywiste oraz prognozowane przez model. Zauważyć można znaczne różnice, natomiast model (w przeciwieństwie do SARIMY) przyjmuje wartości, które nie różnią się zbytnio od siebie (ich różnice są o rząd mniejsze niż rzeczywistych wahań). Powyższa tabela dokładnie przedstawia wartości prognoz, wartości rzeczywistych oraz ich różnic, służących do obliczenia błędów predykcji ex-post (ME,MAE,MSE oraz MAPE).
+* ME (-0,008)
+* MAE (0,0125)
+* MSE (0,0002)
+* MAPE (95,525%)
+
+Wartości pierwszych trzech błędów łączy podobna relacja co w przypadku SARIMY. Należy pamiętać jednak o znacznej różnicy w rzędzie wielkości danych (jedności i części setne). W tym kontekście błędy prognoz drugiego z rozpatrywanych modeli są znaczące, a prognoza wydaje się bardzo niedokładna. Warto zwrócić uwagę na mniejsze "znoszenie się" wartości dodatnich i ujemnych w różnicach (MAE jest tylko 64% większe niż ME) oraz na znaczną wartość błędu MAPE. Błąd ten musiał zostać jednak obliczony dla mniejszej liczby danych, gdyż wśród wartości realnych wystąpiło 0, co spwodowało wartość błędu równą nieskończoność. Po poprawie błąd ten wynosi niemal 100%, co jest zupełną skrajnością dla wartości 0,21% dotyczącej modelu SARIMA. Ocena prognozy modelu SARIMA-GARCH ukazuje szczególnie zarówno zalety (kontekst błędu) jak i wady (ryzyko otrzymania niepoprawnych wyników dla danych zbliżonych do 0) błędu MAPE.
+
+# Budowa modelu VAR   
+
+Model VAR jest jednym z etapów przed zastosowaniem testu przyczynowości Grangera. Model wektorowo-autoregresyjny (VAR) jest to model wielorównaniowy, wykorzystywany do analizy wielu szeregów czasowych, w którym jako zmienne egzogeniczne występują zarówno opóźnienia zmiennej objaśnianej jak i opóźnienia pozostałych zmiennych. Uogólniona postać modelu VAR wygląda następująco:      
+
+$$ Z_t = A_0 D_0 + \sum_{i=1}^k A_i Z_{t-i}\ + \varepsilon_t$$
+
+Gdzie:   
+- $$Z_t$$ to wektor obserwacji bieżących wartości wszystkich n zmiennych modelu,
+- $$A_i$$ to macierze parametrów przy opóźnionych zmiennych,  które nie zawierają elementów zerowych,
+- $$\varepsilon_t$$ to wektor procesów resztkowych, w którym poszczególne składowe powinny być ze sobą skorelowane, lecz nie zawierają autokorelacji,
+- k to rząd modelu VAR.
+- $$D_t$$ to wektor deterministycznych składowych równań,
+- $$A_0$$ to macierz parametrów przy zmiennych wektora $$D_t$$
+
+Do estymacji parametrów modelu VAR można posłużyć się metodą najmniekszych kwadratów. 
+
+## Wybór opóźnienia i weryfikacja założeń
+
+Przed budową modelu należy wybrać opóźnienie. Wybór ten zostanie dokonany za pomocą funkcji VARselect() dostępnej w języku R. Wspomniana funkcja dostarcza informacji, dla jakich opóźnień wartości kryteriów informacyjnych będą najmniejsze, co znacznie zawęża zbior dostępnych opóźnień. 
+
+```{r,echo=FALSE}
+train_df <- data.frame(dane6, dane7)
+VARselect(train_df, lag.max = 30)
+```
+
+W analizowanym przypadku trzy kryteria wskazały na opóźnienie równe 2, a jedno na opóźnienie równe 1. DLatego też najpierw został zbudowany model VAR(1), w którym następnie zweryfikowano jedno z najważniejszych założeń, które wskazuje na poprawność modelu, czyli występowanie autokorelacji w resztach. Wykorzystano do tego test Ljung-Box'a, w którym hipotezy mają postać:   
+
+H~0~: reszty rozkładają się niezależnie (brak autokorelacji)    
+H~1~: ~$$H_0$$   
+
+Wnioskowanie w teście Ljung-Boxa jest identyczne jak w pozostałych testach - gdy wartośc statystyki testowej jest większa niż wartość krytyczna, odrzucamy hipotezę zerową o braku autokorelacji. Decyzję można podjąć również w oparciu o wartość p-value, gdy jest ona mniejsza niż przyjęty poziom istotności odrzucamy hipotezę zerową.
+
+```{r,echo=FALSE}
+#Model VAR
+model_var1 <- VAR(train_df, p=3)
+
+# Autokorelacja
+(test_autokor1 <- Box.test(model_var1$varresult$dane6$residuals, type = "Ljung-Box", lag=3))
+(test_autokor2 <- Box.test(model_var1$varresult$dane7$residuals, type = "Ljung-Box", lag=3))
+```
+
+Wartości p-value z testu Ljung-Boxa są zdecydowanie większe niż poziom istotności równy 5%, więc nie ma podstaw do odrzucenia hipotezy zerowej, czyli mozna przyjąć, że w modelu nie występuje autokorelacja reszt. 
+
+# Przyczynowość Grangera
+
+Po zbudowaniu modelu pora na najważniejszą część, czyli przeprowadzenie testu przyczynowości Grangera, który pozwoli wykazać siłę oraz kierunek zależności pomiędzy rozważanymi szeregami czasowymi.   
+
+Test przyczynowości Grangera oraz samo pojęcie przyczynowości, na którym oparty jest ten test stanowi centralny punkt rozważań na temat zależności przyczynowych pomiędzy dwoma analizowanymi szeregami czasowymi oraz w szerszym kontekście pomiędzy firmami 11 bit Studios oraz CD Projekt.
+
+Definicja przyczynowości, jaką wprowadził Granger polega na założeniu, że skutek nie może poprzedzać przyczyny. Dlatego więc, mając dwie zmienne np. X i Y mówimy, że X jest przyczyną w sensie Grangera dla Y, jeśli przeszłe wartości zmiennej X pozwalają lepiej prognozować obecne wartości Y przy niezmienionych pozostałych informacjach [^12]. 
+
+## Test Grangera
+
+W tesćie Grangera utworzyć trzeba dwa modele - jeden z pełną informacją, a drugi z restrykcjami:    
+
+$$ y_t = \sum_{j=1}^k \alpha_j y_{t-j}\ + \sum_{j=1}^k \beta_j x_{t-j}\ + \varepsilon_t$$   
+$$ y_t = \sum_{j=1}^k \alpha_j y_{t-j}\ + \eta_t$$
+hipotezy w teście Grangera mają następujący układ:     
+
+$$H_0: \beta_j=0$$ dla każdego $$j=1,...,k$$ - brak przyczynowości   
+$$H_1: \beta_j\neq0$$ dla każdego $$j={1,...,k}$$ - występuje przyczynowość
+
+```{r,echo=FALSE}
+#Granger - H0: brak przyczynowości
+#Czy 11bit wpływa na cdproject
+(F_11bit_cdProject <- grangertest(dane6, dane7, order = 4))
+#Czy cdproject wpływa na 11bit
+(F_cdProject_11bit <- grangertest(dane7, dane6, order = 4))
+```
+Jak wykazał test Grangera zależność przyczynowa pomiędzy 11 bit Studios a CD Project nie występuje w żadnym kierunku, gdyż wartości p-value są zdecydowanie większe niż 0,05 (przyjęty poziom istotności). Jest to zaskakujący wynik, ponieważ wykresy cen zamknięcia podążały praktycznie przez cały czas w tym samym kierunku, co pozwalało przypuszczać, iż zależność będzie istniała. 
+
+# Kointegracja
+
+Jeżeli szereg jest stacjonarny, to nie jest on zintegrowany ($y_t\sim I(0)$)  Jeżeli przyrost szeregu czasowego jest stacjonarny to szereg ten jest zintegrowany w stopniu 1 ($y_t \sim I(1)$). Na podstawie poprzedniej części sprawozdania powiedzieć można, że zarówno szereg czasowy reprezentujący logarytmy z notowań 11 bit, jak i CDPR są zintegrowane w stopniu 1.   
+Natomiast jeżeli mielibyśmy 2 niestacjonarne szeregi y oraz x, to byłyby one skointegrowane, gdyby istniało Beta takie że:
+$$y_t -\beta x_t \sim I(0) $$
+Czyli kombinacja liniowa tych dwóch szeregów byłaby stacjonarnym szeregiem czasowym. Wówczas można zapisać równanie:
+$$y_t=\beta x_t + u_t $$
+Jego interpretacja jest następująca: z czasem te szeregi nie oddalają się od siebie w sposób znaczący, więc występuje między nimi relacja długookresowej równowagi.   
+Posiadamy 2 szeregi czasowe, które są niestacjonarne - aby sprawdzić czy są skointegrowane wykonamy test Johansena oraz procedurę Engle'a i Granger'a. 
+
+## Test Johansena
+Po sprawdzeniu, że rozpatrywane szeregi czasowe są niestacjonarne, można wykonać test na wykrycie rzędu kointegracji. Søren Johansen zaproponował dwa rodzaje tego testu:
+
+* test śladu - ze statystykami testowymi:
+
+$$H_0: rank(\Pi) = r_0$$
+$$H_1: r_0< rank(\Pi) \leq K$$
+
+* test największej wartości własnej - ze statystykami testowymi:
+
+$$H_0: rank(\Pi) = r_0$$
+$$H_1: r_0< rank(\Pi) \leq r_0+1$$
+W sprawozdaniu wykonana zostanie wersja testu śladu (za pomocą funkcji ca.jo() z parametrem type="trace"). Jej statystyka ma postać:
+
+$$LR(r_0)=-T\sum^m_{j=r_0}ln(1-\lambda_j)$$
+Gdzie:  
+$m$ - liczba rozpatrywanych szeregów  
+$T$ - liczba obserwacji  
+$\lambda_j$ - wartości własne  
+$r_0$ - testowany rząd kointegracji  
+
+Test ten jest wykonywany automatycznie dla szeregu hipotez, a ich liczba zależy od liczby rozpatrywanych szeregów. W projekcie są 2 zmienne, zatem sprawdzone zostaną 2 pary hipotez (o istnieniu 0 lub 1 wektora kointegrującego). Hipoteza alternatywna zawsze jest postaci, że istnieje istotnie więcej relacji kointegrujących niż przyjęto w hipotezie głównej. Zestawienie wyników przy różnych poziomach istotności pozwala podjąć decyzję o rzędzie kointegracji w modelu. Gdy statystyka testowa będzie większa niż odpowiednia wartość krytyczna, hipotezę główną odrzuca się na rzecz hipotezy alternatywnej.
+Jednym z argumentów, jakie należy podać do funkcji ca.jo() jest K. Jest to kolejność opóźnień szeregów (poziomów) w modelu VAR (według dokumentacji R). Przyjęto K=2, gdyż jest to wymiar macierzy $\Pi$ i zarazem liczba rozpatrywanych szeregów (11 bit i CDPR).
+
+```{r,echo=FALSE}
+dane[,4] = log(dane[,2])
+dane[,5] = log(dane[,3])
+testJ <- ca.jo(dane[,4:5], K=2)
+summary(testJ)
+```
+
+Dla przyjętego poziomu istotności $\alpha=0,05$ nie ma podstaw do odrzucenia hipotezy głównej postaci $H_0: r=0$. Na tej podstawie przyjąć można że rozpatrywane szeregi czasowe nie są skointegrowane.
+
+## Procedura Engle'a i Granger'a
+
+Alternatywą dla testu Johansena jest metoda przedstawiona przez Engle'a i Granger'a. Posiada ona mniejszą moc i gorsze właściwości statystyczne, niemniej jednak została ona zaprezentowana w formie ciekawostki. Jej pierwszym etapem jest estymacja z użyciem MNK. Następnie następuje wykonanie testu ADF dla reszt otrzymanej regrsji. Gdy odrzuci się hipotezę główną o braku stacjonarności oznaczać to będzie, że oszacowany wektor MNK jest wektorem kointegrującym. W rozpatrywanym przypadku procedura zostanie wykonana 2 razy - najpierw w MNK za y zostaną przyjęte logarytmy notowań 11 bit, a objaśniać będą je logarytmy notowań CDPR Następnie nastąpi zamiana. W pakiecie R istnieją również testy dotyczące tej procedury. Porównano autorską metodę (polegającą na wyestymowaniu modelu funkcją lm(), a następnie weryfikacji stacjonarności reszt tego modelu testem ADF) z funkcją coint.test() z pakietu aTSA.
+
+```{r,echo=FALSE}
+library(aTSA)
+cat("MNK w którym y=11bit, x=CDPR")
+
+modelMNK<-lm(dane[,4]~dane[,5])
+tseries::adf.test(modelMNK$residuals, alternative = "stationary")
+coint.test(dane[,4],dane[,5], nlag = 1)
+cat("MNK w którym y=CDPR, x=11bit ")
+modelMNK<-lm(dane[,5]~dane[,4])
+tseries::adf.test(modelMNK$residuals, alternative = "stationary")
+coint.test(dane[,5],dane[,4], nlag = 1)
+```
+Bazując na ręcznie wykonywanym teście, na poziomie istotności równym 0,05 brak podstaw do odrzucenia hipotezy głównej o braku stacjonarności, stąd można założyć że to wektor MNK nie jest wektorem kointegrującym. Natomiast funkcja coint.test dla wersji no trend zarówno w pierwszej jak i drugiej relacji wskazuje na istnienie kointegracji (wartości p-value są mniejsze niż przyjęty poziom istotności, co wskazuje na konieczność odrzucenia hipotezy głównej na rzecz hipotezy alternatywnej). Jak wskazano jednak powyżej, procedura Engle'a i Granger'a jest gorszym testem na wykrywanie kointegracji, zatem postanowiono przyjąć wyniki lepszego testu Johansena.
+
+[^1] Chan H. N., Time series. Applications to Finance with R and S-Plus, John Wiley & Sons, Hoboken 2010, s. 16
+[^2] Kozłowski E., Analiza i identyfikacja szeregów czasowych, Politechnika Lubelska, Lublin 2015, s. 192
+[^3] Maddala G. S., Ekonometria, s.612-614
+[^4] Niezbędnik SGH, Stacjonarność i niestacjonarność szeregów czasowych (https://www.e-sgh.pl/niezbednik/plik.php?id=27273993&pid=3472)
+[^5] Maddala G. S., op. cit., s.615-619
+[^6] Engle Robert F., Autoregressive Conditional Heteroscedasticity with Estimates of the Variance of United Kingdom Inflation, Econometrica, vol. 50, no. 4, 1982, pp. 987–1007. JSTOR, 
+[^7] Greene W. H., Econometric Analysis, Pearson, 2012, s. 970.
+[^8] Hardy R. [How to fit a SARIMA + GARCH in R?](https://quant.stackexchange.com/questions/17129/how-to-fit-a-sarima-garch-in-r) (odpowiedź w serwisie StackExchange)
+[^9] Chand S., Kamal S., Ali I., [Modeling and volatility analysis of share prices using ARCH and GARCH models](https://www.researchgate.net/figure/Actual-fitted-and-residuals-under-ARIMA1-1-0-with-GARCH1-1-model_fig2_236270682)
+[^10] Pavlyshenko B.,  [Stock volatility prediction using GARCH models and machine learning approach](https://www.linkedin.com/pulse/stock-volatility-prediction-using-garch-models-bohdan-pavlyshenko) 
+[^11] Wolak J., Uczenie statystyczne w R (wykład), s. 19-29
+[^12] Granger C. W. J. Investigating Causal Relations by Econometric Models and Cross-Spectral Methods, Econometrica, vol. 37, no. 3, 1969, pp. 424–438. JSTOR, www.jstor.org/stable/1912791
